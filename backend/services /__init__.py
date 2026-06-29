@@ -1,0 +1,1 @@
+"""Service layer — export, storage, and future embedding services."""

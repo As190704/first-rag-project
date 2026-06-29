@@ -1,0 +1,1 @@
+"""Parser package — PDF, image, OCR, and routing modules."""

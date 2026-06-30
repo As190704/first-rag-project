@@ -1,12 +1,14 @@
 """
-FastAPI application entry point for the Multimodal RAG ingestion pipeline.
+FastAPI application entry point — Phase 1 + Phase 2.
 
 Phase 1: Document ingestion and parsing.
+Phase 2: Semantic chunking, embedding, and vector search.
 
-The application is structured for easy extension in later phases:
-  - Phase 2: Embeddings and vector database ingestion
-  - Phase 3: Multimodal retrieval
-  - Phase 4: LLM integration and RAG query API
+Routers registered:
+  POST /api/v1/upload  — Phase 1 document ingestion
+  POST /api/v1/index   — Phase 2 document indexing
+  POST /api/v1/search  — Phase 2 semantic search
+  GET  /health         — System health (includes Qdrant status)
 """
 
 from __future__ import annotations
@@ -19,12 +21,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from api.upload import router as upload_router
+from api.index import router as index_router
+from api.search import router as search_router
 from utils.file_utils import ensure_directories
 from utils.logger import get_logger
+from vector_db.qdrant_client import ensure_collection, qdrant_health_check
 
 logger = get_logger(__name__)
-
-# ── Directories created on startup ────────────────────────────────────────────
 
 REQUIRED_DIRS = [
     Path("uploads"),
@@ -34,67 +37,56 @@ REQUIRED_DIRS = [
 ]
 
 
-# ── Lifespan ──────────────────────────────────────────────────────────────────
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """
-    Application lifespan handler.
-
-    Runs startup/shutdown logic using FastAPI's modern lifespan interface.
-    All required output directories are created here so the API is
-    immediately ready to handle uploads after startup.
-    """
-    # ── Startup ───────────────────────────────────────────────────────────────
+    """Startup and shutdown lifecycle handler."""
     logger.info("=" * 60)
-    logger.info("  Multimodal RAG — Phase 1: Document Ingestion Pipeline")
+    logger.info("  Multimodal RAG — Phase 1 + Phase 2")
+    logger.info("  Document Ingestion + Semantic Search")
     logger.info("=" * 60)
 
     ensure_directories(*REQUIRED_DIRS)
-    logger.info("Required directories verified.")
-    logger.info("Application ready. Listening for document uploads.")
 
+    # Initialise Qdrant collection on startup
+    try:
+        ensure_collection()
+        logger.info("Qdrant collection ready.")
+    except Exception as exc:
+        logger.warning("Qdrant not available at startup: %s", exc)
+        logger.warning("Indexing and search will fail until Qdrant is running.")
+
+    logger.info("Application ready.")
     yield
-
-    # ── Shutdown ──────────────────────────────────────────────────────────────
-    logger.info("Application shutting down. Goodbye.")
-
-
-# ── Application factory ───────────────────────────────────────────────────────
+    logger.info("Application shutting down.")
 
 
 def create_app() -> FastAPI:
-    """
-    Create and configure the FastAPI application.
-
-    Returns:
-        Configured FastAPI instance.
-    """
+    """Create and configure the FastAPI application."""
     app = FastAPI(
-        title="Multimodal RAG — Document Ingestion API",
+        title="Multimodal RAG — Research Assistant API",
         description=(
-            "Phase 1 of the Multimodal Retrieval-Augmented Generation system. "
-            "Accepts research documents (PDF, images, DOCX, PPTX) and extracts "
-            "structured content including sections, tables, and images."
+            "Phase 1: Document ingestion pipeline (PDF, images, DOCX, PPTX).\n"
+            "Phase 2: Semantic chunking, BGE-M3 embeddings, Qdrant vector search."
         ),
-        version="1.0.0",
+        version="2.0.0",
         docs_url="/docs",
         redoc_url="/redoc",
         lifespan=lifespan,
     )
 
-    # ── CORS ──────────────────────────────────────────────────────────────────
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # Tighten in production
+        allow_origins=["*"],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
 
     # ── Routers ───────────────────────────────────────────────────────────────
-    app.include_router(upload_router, prefix="/api/v1", tags=["Document Ingestion"])
+    prefix = "/api/v1"
+    app.include_router(upload_router, prefix=prefix, tags=["Phase 1 — Ingestion"])
+    app.include_router(index_router, prefix=prefix, tags=["Phase 2 — Indexing"])
+    app.include_router(search_router, prefix=prefix, tags=["Phase 2 — Search"])
 
     # ── Global exception handler ──────────────────────────────────────────────
     @app.exception_handler(Exception)
@@ -102,39 +94,27 @@ def create_app() -> FastAPI:
         logger.exception("Unhandled exception on %s %s", request.method, request.url)
         return JSONResponse(
             status_code=500,
-            content={
-                "error": "Internal server error",
-                "detail": str(exc),
-                "path": str(request.url),
-            },
+            content={"error": "Internal server error", "detail": str(exc)},
         )
 
-    # ── Health check ──────────────────────────────────────────────────────────
-    @app.get("/health", tags=["System"], summary="Health check")
+    # ── Enhanced health check ─────────────────────────────────────────────────
+    @app.get("/health", tags=["System"])
     async def health_check() -> dict:
-        """Return service health status."""
+        """System health including Qdrant connectivity."""
+        qdrant_status = qdrant_health_check()
         return {
             "status": "healthy",
-            "phase": 1,
-            "service": "document-ingestion",
-            "version": "1.0.0",
+            "phase": 2,
+            "service": "multimodal-rag",
+            "version": "2.0.0",
+            "qdrant": qdrant_status,
         }
 
     return app
 
 
-# ── Module-level app instance (for uvicorn) ───────────────────────────────────
-
 app = create_app()
-
 
 if __name__ == "__main__":
     import uvicorn
-
-    uvicorn.run(
-        "app:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=True,
-        log_level="info",
-    )
+    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)

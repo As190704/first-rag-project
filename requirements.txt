@@ -9,17 +9,36 @@ PyMuPDF==1.24.10
 paddlepaddle==2.6.1
 paddleocr==2.7.3
 
-# ── Image Processing (Phase 1) ────────────────────────────────────────────────
+# ── Image Processing (Phase 1 + 3) ───────────────────────────────────────────
 Pillow==10.4.0
 opencv-python==4.10.0.84
 numpy==1.26.4
 
 # ── Embeddings (Phase 2) ──────────────────────────────────────────────────────
 sentence-transformers==3.1.1
-torch==2.4.1                  # CPU build; replace with torch+cu121 for CUDA
+torch==2.4.1
 
-# ── Vector Database (Phase 2) ─────────────────────────────────────────────────
+# ── Vector Database (Phase 2 + 3) ────────────────────────────────────────────
 qdrant-client==1.11.1
+
+# ── Vision Language Model (Phase 3) ──────────────────────────────────────────
+transformers>=4.45.0
+accelerate>=0.26.0
+qwen-vl-utils>=0.0.6
+
+# ── ColPali Visual Embeddings (Phase 3) ───────────────────────────────────────
+colpali-engine>=0.3.0
+
+# ── Table Extraction (Phase 3) ────────────────────────────────────────────────
+camelot-py[cv]==0.11.0
+ghostscript                    # Required by camelot for PDF rendering
+
+# ── Chart Processing (Phase 3) ────────────────────────────────────────────────
+# ChartOCR must be installed from source:
+# git clone https://github.com/soap117/DeepRule && cd DeepRule && pip install -e .
+
+# ── Optional: LaTeX equation OCR ─────────────────────────────────────────────
+# pix2tex==0.1.2               # Uncomment to enable LaTeX-OCR for equations
 
 # ── Data Validation ───────────────────────────────────────────────────────────
 pydantic==2.8.2

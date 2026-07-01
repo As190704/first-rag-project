@@ -1,14 +1,13 @@
 """
-FastAPI application entry point — Phase 1 + Phase 2.
+FastAPI application — Phase 1 + Phase 2 + Phase 3.
 
-Phase 1: Document ingestion and parsing.
-Phase 2: Semantic chunking, embedding, and vector search.
-
-Routers registered:
-  POST /api/v1/upload  — Phase 1 document ingestion
-  POST /api/v1/index   — Phase 2 document indexing
-  POST /api/v1/search  — Phase 2 semantic search
-  GET  /health         — System health (includes Qdrant status)
+Routers:
+  POST /api/v1/upload              — Phase 1: document ingestion
+  POST /api/v1/index               — Phase 2: text indexing
+  POST /api/v1/search              — Phase 2: text search
+  POST /api/v1/multimodal/index    — Phase 3: multimodal indexing
+  POST /api/v1/multimodal/search   — Phase 3: hybrid search
+  GET  /health                     — system health
 """
 
 from __future__ import annotations
@@ -23,9 +22,11 @@ from fastapi.responses import JSONResponse
 from api.upload import router as upload_router
 from api.index import router as index_router
 from api.search import router as search_router
+from api.multimodal import router as multimodal_router
 from utils.file_utils import ensure_directories
 from utils.logger import get_logger
 from vector_db.qdrant_client import ensure_collection, qdrant_health_check
+from vector_db.multimodal_indexer import ensure_multimodal_collection
 
 logger = get_logger(__name__)
 
@@ -39,21 +40,24 @@ REQUIRED_DIRS = [
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup and shutdown lifecycle handler."""
     logger.info("=" * 60)
-    logger.info("  Multimodal RAG — Phase 1 + Phase 2")
-    logger.info("  Document Ingestion + Semantic Search")
+    logger.info("  Multimodal RAG — Phase 1 + 2 + 3")
+    logger.info("  Ingestion + Text Search + Multimodal Search")
     logger.info("=" * 60)
 
     ensure_directories(*REQUIRED_DIRS)
 
-    # Initialise Qdrant collection on startup
     try:
         ensure_collection()
-        logger.info("Qdrant collection ready.")
+        logger.info("Phase 2 Qdrant collection ready.")
     except Exception as exc:
-        logger.warning("Qdrant not available at startup: %s", exc)
-        logger.warning("Indexing and search will fail until Qdrant is running.")
+        logger.warning("Phase 2 Qdrant collection unavailable: %s", exc)
+
+    try:
+        ensure_multimodal_collection()
+        logger.info("Phase 3 multimodal Qdrant collection ready.")
+    except Exception as exc:
+        logger.warning("Phase 3 Qdrant collection unavailable: %s", exc)
 
     logger.info("Application ready.")
     yield
@@ -61,14 +65,14 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
-    """Create and configure the FastAPI application."""
     app = FastAPI(
         title="Multimodal RAG — Research Assistant API",
         description=(
-            "Phase 1: Document ingestion pipeline (PDF, images, DOCX, PPTX).\n"
-            "Phase 2: Semantic chunking, BGE-M3 embeddings, Qdrant vector search."
+            "Phase 1: Document ingestion (PDF, images, DOCX, PPTX).\n"
+            "Phase 2: Text chunking, BGE-M3 embeddings, semantic search.\n"
+            "Phase 3: Figure/chart/table/equation indexing, hybrid retrieval."
         ),
-        version="2.0.0",
+        version="3.0.0",
         docs_url="/docs",
         redoc_url="/redoc",
         lifespan=lifespan,
@@ -82,13 +86,16 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # ── Routers ───────────────────────────────────────────────────────────────
     prefix = "/api/v1"
     app.include_router(upload_router, prefix=prefix, tags=["Phase 1 — Ingestion"])
-    app.include_router(index_router, prefix=prefix, tags=["Phase 2 — Indexing"])
-    app.include_router(search_router, prefix=prefix, tags=["Phase 2 — Search"])
+    app.include_router(index_router, prefix=prefix, tags=["Phase 2 — Text Indexing"])
+    app.include_router(search_router, prefix=prefix, tags=["Phase 2 — Text Search"])
+    app.include_router(
+        multimodal_router,
+        prefix=f"{prefix}/multimodal",
+        tags=["Phase 3 — Multimodal"],
+    )
 
-    # ── Global exception handler ──────────────────────────────────────────────
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
         logger.exception("Unhandled exception on %s %s", request.method, request.url)
@@ -97,17 +104,15 @@ def create_app() -> FastAPI:
             content={"error": "Internal server error", "detail": str(exc)},
         )
 
-    # ── Enhanced health check ─────────────────────────────────────────────────
     @app.get("/health", tags=["System"])
     async def health_check() -> dict:
-        """System health including Qdrant connectivity."""
-        qdrant_status = qdrant_health_check()
+        qdrant = qdrant_health_check()
         return {
             "status": "healthy",
-            "phase": 2,
+            "phase": 3,
             "service": "multimodal-rag",
-            "version": "2.0.0",
-            "qdrant": qdrant_status,
+            "version": "3.0.0",
+            "qdrant": qdrant,
         }
 
     return app

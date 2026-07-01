@@ -1,0 +1,1 @@
+"""Test suite for Phase 2 — indexing and semantic search pipeline."""
